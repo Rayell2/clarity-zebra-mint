@@ -8,7 +8,7 @@ import {
 import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 Clarinet.test({
-  name: "Can mint new NFT with metadata",
+  name: "Can mint new NFT with royalties",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const wallet1 = accounts.get('wallet_1')!;
     
@@ -16,78 +16,103 @@ Clarinet.test({
       Tx.contractCall('zebra-mint', 'mint', [
         types.utf8("Cool NFT"),
         types.utf8("A very cool NFT description"),
-        types.utf8("https://example.com/image.png")
+        types.utf8("https://example.com/image.png"),
+        types.uint(10)
       ], wallet1.address)
     ]);
     
     block.receipts[0].result.expectOk();
     assertEquals(block.receipts[0].result.expectOk(), types.uint(1));
     
-    // Verify metadata
-    let metadataBlock = chain.mineBlock([
-      Tx.contractCall('zebra-mint', 'get-token-metadata', [
+    let royaltyBlock = chain.mineBlock([
+      Tx.contractCall('zebra-mint', 'get-royalty-info', [
         types.uint(1)
       ], wallet1.address)
     ]);
     
-    const metadata = metadataBlock.receipts[0].result.expectOk().expectSome();
-    assertEquals(metadata['name'], "Cool NFT");
+    const royaltyInfo = royaltyBlock.receipts[0].result.expectOk();
+    assertEquals(royaltyInfo['royalty-percent'], types.uint(10));
+    assertEquals(royaltyInfo['creator'], wallet1.address);
   },
 });
 
 Clarinet.test({
-  name: "Can transfer NFT between users",
+  name: "Cannot mint with invalid royalty percentage",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const wallet1 = accounts.get('wallet_1')!;
-    const wallet2 = accounts.get('wallet_2')!;
+    
+    let block = chain.mineBlock([
+      Tx.contractCall('zebra-mint', 'mint', [
+        types.utf8("Cool NFT"),
+        types.utf8("A very cool NFT description"),
+        types.utf8("https://example.com/image.png"),
+        types.uint(51)
+      ], wallet1.address)
+    ]);
+    
+    block.receipts[0].result.expectErr();
+  },
+});
+
+Clarinet.test({
+  name: "Can burn owned NFT",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const wallet1 = accounts.get('wallet_1')!;
     
     // First mint NFT
     let mintBlock = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'mint', [
         types.utf8("Cool NFT"),
         types.utf8("A very cool NFT description"),
-        types.utf8("https://example.com/image.png")
+        types.utf8("https://example.com/image.png"),
+        types.uint(10)
       ], wallet1.address)
     ]);
     
-    // Then transfer it
+    // Then burn it
+    let burnBlock = chain.mineBlock([
+      Tx.contractCall('zebra-mint', 'burn', [
+        types.uint(1)
+      ], wallet1.address)
+    ]);
+    
+    burnBlock.receipts[0].result.expectOk();
+    
+    // Verify cannot transfer burned token
     let transferBlock = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'transfer', [
         types.uint(1),
         types.principal(wallet1.address),
-        types.principal(wallet2.address)
+        types.principal(accounts.get('wallet_2')!.address)
       ], wallet1.address)
     ]);
     
-    transferBlock.receipts[0].result.expectOk();
-    
-    // Verify new owner
-    let ownerBlock = chain.mineBlock([
-      Tx.contractCall('zebra-mint', 'get-owner', [
-        types.uint(1)
-      ], wallet1.address)
-    ]);
-    
-    const owner = ownerBlock.receipts[0].result.expectOk().expectSome();
-    assertEquals(owner, wallet2.address);
+    transferBlock.receipts[0].result.expectErr();
   },
 });
 
 Clarinet.test({
-  name: "Can update NFT metadata as owner",
+  name: "Cannot update metadata of burned NFT",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const wallet1 = accounts.get('wallet_1')!;
     
-    // First mint NFT
+    // First mint and burn NFT
     let mintBlock = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'mint', [
         types.utf8("Cool NFT"),
         types.utf8("A very cool NFT description"),
-        types.utf8("https://example.com/image.png")
+        types.utf8("https://example.com/image.png"),
+        types.uint(10)
       ], wallet1.address)
     ]);
     
-    // Update metadata
+    let burnBlock = chain.mineBlock([
+      Tx.contractCall('zebra-mint', 'burn', [
+        types.uint(1)
+      ], wallet1.address)
+    ]);
+    
+    // Try to update metadata
     let updateBlock = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'update-metadata', [
         types.uint(1),
@@ -97,16 +122,6 @@ Clarinet.test({
       ], wallet1.address)
     ]);
     
-    updateBlock.receipts[0].result.expectOk();
-    
-    // Verify updated metadata
-    let metadataBlock = chain.mineBlock([
-      Tx.contractCall('zebra-mint', 'get-token-metadata', [
-        types.uint(1)
-      ], wallet1.address)
-    ]);
-    
-    const metadata = metadataBlock.receipts[0].result.expectOk().expectSome();
-    assertEquals(metadata['name'], "Updated NFT");
+    updateBlock.receipts[0].result.expectErr();
   },
 });
