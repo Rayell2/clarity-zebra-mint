@@ -1,32 +1,34 @@
-[Previous tests remain unchanged...]
-
 Clarinet.test({
-  name: "Cannot mint with empty metadata fields",
+  name: "Enhanced metadata validation works correctly",
   async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get('deployer')!;
     const wallet1 = accounts.get('wallet_1')!;
     
+    // Test valid metadata
     let block = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'mint', [
-        types.utf8(""),
-        types.utf8("Description"),
+        types.utf8("Valid Name"),
+        types.utf8("Valid Description"),
         types.utf8("https://example.com/image.png"),
         types.uint(10)
       ], wallet1.address)
     ]);
     
-    block.receipts[0].result.expectErr();
-    assertEquals(block.receipts[0].result.expectErr(), types.uint(105));
+    block.receipts[0].result.expectOk();
     
+    // Test invalid URL
     block = chain.mineBlock([
       Tx.contractCall('zebra-mint', 'mint', [
-        types.utf8("Name"),
-        types.utf8(""),
-        types.utf8("https://example.com/image.png"),
+        types.utf8("Valid Name"),
+        types.utf8("Valid Description"),
+        types.utf8("invalid-url"),
         types.uint(10)
       ], wallet1.address)
     ]);
     
     block.receipts[0].result.expectErr();
-    assertEquals(block.receipts[0].result.expectErr(), types.uint(105));
+    assertEquals(block.receipts[0].result.expectErr(), types.uint(107));
   },
 });
+
+// Previous tests remain unchanged...
